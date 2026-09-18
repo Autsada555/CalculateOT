@@ -4,6 +4,9 @@ calculate_ot.db
 
 # Python environment and generated files
 .venv/
+.venv-codex/
+.uv-cache/
+tmp/
 __pycache__/
 *.py[cod]
 

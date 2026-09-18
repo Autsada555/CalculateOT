@@ -9,6 +9,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterable
 
+from calendar_reference import reference_for
+
 DB_PATH = Path(__file__).with_name("calculate_ot.db")
 DAY_TYPES = ("WHITE", "BLUE", "ORANGE", "GREEN")
 
@@ -143,14 +145,22 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(work_date);
             CREATE INDEX IF NOT EXISTS idx_ot_date ON overtime_records(work_date);
             CREATE INDEX IF NOT EXISTS idx_payroll_month ON payroll_summary(payroll_month);
+            CREATE TABLE IF NOT EXISTS app_migrations (
+                name TEXT PRIMARY KEY,
+                applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             """
         )
-        for work_date, (day_type, description) in DEFAULT_2026_DATES.items():
-            conn.execute(
-                """INSERT OR IGNORE INTO calendar_dates(work_date, day_type, description)
-                   VALUES (?, ?, ?)""",
-                (work_date, day_type, description),
-            )
+        # Reference data is separate from explicit user overrides. Remove only
+        # exact, unchanged legacy seeds once; preserve custom edits and history.
+        migration = "calendar_2026_reference_v1"
+        if not conn.execute("SELECT 1 FROM app_migrations WHERE name=?", (migration,)).fetchone():
+            for work_date, (day_type, description) in DEFAULT_2026_DATES.items():
+                conn.execute(
+                    "DELETE FROM calendar_dates WHERE work_date=? AND day_type=? AND description=?",
+                    (work_date, day_type, description),
+                )
+            conn.execute("INSERT INTO app_migrations(name) VALUES (?)", (migration,))
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(payroll_summary)")}
         if "other_income" not in columns:
             conn.execute("ALTER TABLE payroll_summary ADD COLUMN other_income REAL NOT NULL DEFAULT 0")
@@ -211,13 +221,23 @@ def delete_employee(employee_id: int) -> None:
 
 
 def day_type_for(work_date: date | str) -> str:
-    day = work_date.isoformat() if isinstance(work_date, date) else work_date
+    return get_calendar_day(work_date)["day_type"]
+
+
+def get_calendar_day(work_date: date | str) -> dict[str, Any]:
+    """Return an override, the verified company date, or a labeled fallback."""
+    day = work_date.isoformat() if isinstance(work_date, date) else date.fromisoformat(work_date).isoformat()
     with get_connection() as conn:
-        row = conn.execute("SELECT day_type FROM calendar_dates WHERE work_date=?", (day,)).fetchone()
+        row = conn.execute("SELECT * FROM calendar_dates WHERE work_date=?", (day,)).fetchone()
     if row:
-        return row["day_type"]
-    # Saturday/Sunday are weekly holidays unless an explicit calendar item overrides them.
-    return "ORANGE" if date.fromisoformat(day).weekday() >= 5 else "WHITE"
+        return {**dict(row), "source": "user_override", "is_override": True}
+    reference = reference_for(day)
+    if reference:
+        return reference
+    weekend = date.fromisoformat(day).weekday() >= 5
+    return {"work_date": day, "day_type": "ORANGE" if weekend else "WHITE",
+            "description": "วันหยุดประจำสัปดาห์ (ค่าเริ่มต้น)" if weekend else "วันทำงาน (ค่าเริ่มต้น)",
+            "source": "weekend_fallback", "is_override": False}
 
 
 def get_calendar_dates(year: int, month: int | None = None) -> list[dict[str, Any]]:

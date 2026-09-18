@@ -1,6 +1,28 @@
 # Calculate OT
 
-A bilingual (Thai / English) Streamlit application for employee attendance, overtime calculation, monthly payroll summaries, extra income/deductions, a rough tax estimator, and Excel/PDF exports. Data is stored locally in SQLite.
+แอป Streamlit ธีมชมพูพาสเทลสำหรับคำนวณเงินเดือนและ OT พร้อมปฏิทินบริษัทปี 2026 เปิดแอปแล้วกรอกตัวเลขได้ทันที โดยไม่ต้องเพิ่มพนักงานหรือบันทึกเวลาก่อน เมนูจัดการพนักงาน บันทึกเวลา เงินเดือน และรายงานเดิมยังใช้งานได้ ข้อมูลส่วนจัดการเก็บใน SQLite
+
+## คำนวณเงินเดือนแบบง่าย
+
+1. เลือกรอบเงินเดือนในแถบด้านข้าง (วันที่ 16 เดือนก่อน ถึงวันที่ 15 ของเดือนที่เลือก)
+2. กรอกเงินเดือนพื้นฐาน เบี้ยขยัน ค่าอาหาร ค่าเดินทาง ค่ากะ และเงินเพิ่มอื่น ๆ เป็นยอดรวมต่อเดือน
+3. กรอกยอดประกันสังคม ภาษีหัก ณ ที่จ่าย และรายการหักอื่น ๆ ตามยอดจริง ไม่ได้คำนวณอัตราหักให้อัตโนมัติ
+4. ถ้ามี OT ให้เลือกวันที่ทำงานเพิ่ม ระบบอ่านประเภทวันจากปฏิทิน: วันทำงานกรอกเฉพาะ OT หลัง 8 ชั่วโมง; วันหยุดกรอกชั่วโมงทำงานทั้งหมด
+5. ยอดรับสุทธิอัปเดตเมื่อกด Enter หรือออกจากช่อง และดาวน์โหลดสรุปเป็น CSV ที่เปิดใน Excel ได้
+
+สูตร: **เงินเดือนเต็มเดือน + เงินเพิ่ม + OT / ค่าทำงานวันหยุด − รายการหัก**
+
+เงินเดือนพื้นฐานเป็นฐาน OT (`เงินเดือน ÷ 30 ÷ 8`) เงินเพิ่มไม่รวมในฐานนี้ วันทำงานปกติบวกเฉพาะ OT เพื่อไม่ให้นับค่าจ้างปกติซ้ำ เงินเดือนเต็มเดือนยังไม่หักการขาดงานหรือลางานอัตโนมัติ ให้กรอกยอดในรายการหักหากมี
+
+ตัวเลขหน้าคำนวณเก็บระหว่างเปลี่ยนหน้าในแท็บเดิม แยกตามรอบเดือน แต่ไม่บันทึกลงประวัติพนักงานหรือรายงานเงินเดือนเดิม ให้ดาวน์โหลดสรุปก่อนปิดแท็บหรือเริ่มเซสชันใหม่
+
+## ปฏิทินอ้างอิง
+
+อ่านประเภทวันครบทั้ง 365 วันจาก `assets/calendar-2026.pdf` ซึ่งเป็นสำเนาไฟล์ที่ผู้ใช้แนบ (18/10/2025, Rev.00) รวมวันเสาร์ที่เป็นวันทำงาน มีวันทำงาน 256 วัน วันหยุดประจำสัปดาห์ 84 วัน วันหยุดประเพณี 13 วัน และวันหยุดบริษัท 12 วัน
+
+หน้าปฏิทินเรียงวันที่ตรงวันในสัปดาห์ แสดงวันหยุดสำคัญ และมีปุ่มดาวน์โหลดต้นฉบับ การกำหนดวันเองมีผลเหนือปฏิทินอ้างอิงและใช้ทั้งแอป ลบการกำหนดเพื่อคืนค่าตามต้นฉบับ บันทึกเวลาที่มีอยู่แล้วจะไม่เปลี่ยนประเภทวันตามการแก้ปฏิทิน
+
+หมายเหตุกะกลางคืนในต้นฉบับ: สลับ 23 ม.ค. กับ 14 ก.พ. และ 10 เม.ย. กับ 9 พ.ค. ต้องตรวจและกำหนดวันให้ตรงกะเอง ปฏิทินเดือนมกราคม 2027 ในต้นฉบับระบุว่าเป็นฉบับร่าง จึงไม่ใช้เป็นค่าเริ่มต้น นอกปี 2026 จะมีข้อความแจ้งว่าใช้กฎจันทร์–ศุกร์ทำงาน / เสาร์–อาทิตย์หยุด เว้นแต่กำหนดเอง
 
 ## Run it
 
@@ -11,7 +33,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-The first run creates `calculate_ot.db` automatically. The supplied 2026 calendar's traditional and company holidays are preloaded; weekends default to **ORANGE** (weekly holiday). The Calendar page lets an administrator override or add dates.
+The first run creates `calculate_ot.db` automatically. Verified 2026 reference dates are separate from user overrides. A one-time migration removes only unchanged legacy holiday seed rows so the reference can apply; custom overrides and attendance records are retained.
 
 ## Features
 
@@ -45,5 +67,5 @@ The monthly summary aggregates `regular pay + overtime pay` from the attendance 
 ## Verify payroll rules
 
 ```powershell
-python -m unittest test_calculations.py
+python -m unittest discover -v
 ```

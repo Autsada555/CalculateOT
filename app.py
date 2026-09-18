@@ -11,6 +11,8 @@ import plotly.express as px
 import streamlit as st
 
 import database as db
+from calendar_view import layout_calendar
+from salary_view import layout_quick_calculator
 
 try:
     from reportlab.lib import colors
@@ -23,11 +25,11 @@ except ImportError:  # surfaced as an actionable message when PDF is requested
     colors = None
 
 
-st.set_page_config(page_title="Calculate OT", page_icon="⏱️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Calculate OT", page_icon="⏱️", layout="wide", initial_sidebar_state="collapsed")
 
 TRANSLATIONS = {
     "ไทย": {
-        "Dashboard": "แดชบอร์ด", "Employees": "ข้อมูลพนักงาน", "Attendance": "บันทึกเวลาทำงาน",
+        "Quick calculator": "คำนวณเงินเดือน", "Dashboard": "แดชบอร์ด", "Employees": "ข้อมูลพนักงาน", "Attendance": "บันทึกเวลาทำงาน",
         "Payroll": "เงินเดือนประจำเดือน", "Calendar": "ปฏิทินวันทำงาน", "Reports": "รายงาน / ส่งออก",
         "Tax Calculator": "คำนวณภาษีคร่าวๆ",
         "Monthly Salary": "เงินเดือนต่อเดือน", "Total OT": "ค่า OT", "Total Salary": "เงินเดือนอ้างอิง",
@@ -39,10 +41,10 @@ TRANSLATIONS = {
 }
 
 DAY_META = {
-    "WHITE": {"label": "Working Day / วันทำงาน", "color": "#f8fafc", "text": "#172033"},
-    "BLUE": {"label": "Traditional Holiday / วันหยุดประเพณี", "color": "#0284c7", "text": "white"},
-    "ORANGE": {"label": "Weekly Holiday / วันหยุดประจำสัปดาห์", "color": "#f59e0b", "text": "#172033"},
-    "GREEN": {"label": "Company Holiday / วันหยุดบริษัท", "color": "#65a30d", "text": "white"},
+    "WHITE": {"label": "Working Day / วันทำงาน", "color": "#fffafb", "text": "#493640"},
+    "BLUE": {"label": "Traditional Holiday / วันหยุดประเพณี", "color": "#dcecf8", "text": "#244c69"},
+    "ORANGE": {"label": "Weekly Holiday / วันหยุดประจำสัปดาห์", "color": "#fce6d2", "text": "#805027"},
+    "GREEN": {"label": "Company Holiday / วันหยุดบริษัท", "color": "#dfefe4", "text": "#365943"},
 }
 
 
@@ -162,9 +164,9 @@ def layout_dashboard(selected_month: str) -> None:
     with left:
         by_employee = frame.groupby(["employee_code", "employee_name"], as_index=False)["overtime_pay"].sum()
         by_employee["employee"] = by_employee["employee_code"] + " — " + by_employee["employee_name"]
-        fig = px.bar(by_employee, x="employee", y="overtime_pay", color="overtime_pay", color_continuous_scale="Teal", title="OT by Employee / OT รายพนักงาน")
+        fig = px.bar(by_employee, x="employee", y="overtime_pay", color="overtime_pay", color_continuous_scale=["#fbe8f0", "#c57495", "#ad4670"], title="OT by Employee / OT รายพนักงาน")
         fig.update_layout(coloraxis_showscale=False, margin=dict(l=10, r=10, t=50, b=10), yaxis_title="THB")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     with right:
         all_records = db.get_attendance()
         monthly = pd.DataFrame(all_records)
@@ -173,13 +175,13 @@ def layout_dashboard(selected_month: str) -> None:
         monthly["month"] = monthly["work_date"].str[:7]
         trend = monthly.groupby("month", as_index=False)["overtime_pay"].sum()
         fig = px.line(trend, x="month", y="overtime_pay", markers=True, title="OT by Month / OT รายเดือน")
-        fig.update_traces(line_color="#0f766e")
+        fig.update_traces(line_color="#c57495")
         fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), yaxis_title="THB", xaxis_title="")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     st.subheader("Recent attendance / รายการล่าสุด")
     display = frame[["work_date", "employee_code", "employee_name", "day_type", "working_hours", "regular_pay", "overtime_pay", "total_pay"]].copy()
-    st.dataframe(display, use_container_width=True, hide_index=True, column_config={
+    st.dataframe(display, width="stretch", hide_index=True, column_config={
         "regular_pay": st.column_config.NumberColumn("Regular Pay", format="฿%.2f"),
         "overtime_pay": st.column_config.NumberColumn("OT Pay", format="฿%.2f"),
         "total_pay": st.column_config.NumberColumn("Total Pay", format="฿%.2f"),
@@ -196,7 +198,7 @@ def layout_employees() -> None:
             code = col1.text_input(tr("Employee ID"), placeholder="EMP001")
             name = col2.text_input(tr("Employee Name"), placeholder="Somchai Jaidee")
             salary = col3.number_input(tr("Monthly Salary"), min_value=0.0, step=500.0, format="%.2f")
-            submitted = st.form_submit_button("➕ " + tr("Save"), use_container_width=True)
+            submitted = st.form_submit_button("➕ " + tr("Save"), width="stretch")
         if submitted:
             try:
                 db.save_employee(code, name, salary)
@@ -210,7 +212,7 @@ def layout_employees() -> None:
             st.info("No employees yet.")
             return
         table = pd.DataFrame(employees)[["id", "employee_code", "employee_name", "monthly_salary"]]
-        st.dataframe(table, use_container_width=True, hide_index=True, column_config={"monthly_salary": st.column_config.NumberColumn(tr("Monthly Salary"), format="฿%.2f")})
+        st.dataframe(table, width="stretch", hide_index=True, column_config={"monthly_salary": st.column_config.NumberColumn(tr("Monthly Salary"), format="฿%.2f")})
         selected = st.selectbox("Employee to edit / พนักงานที่ต้องการแก้ไข", employees, format_func=employee_label)
         with st.form("employee_edit"):
             e1, e2, e3 = st.columns(3)
@@ -218,8 +220,8 @@ def layout_employees() -> None:
             edit_name = e2.text_input(tr("Employee Name"), value=selected["employee_name"])
             edit_salary = e3.number_input(tr("Monthly Salary"), min_value=0.0, value=float(selected["monthly_salary"]), step=500.0)
             save_col, delete_col = st.columns(2)
-            update = save_col.form_submit_button("💾 Update / แก้ไข", use_container_width=True)
-            delete = delete_col.form_submit_button("🗑️ Delete / ลบ", use_container_width=True, type="secondary")
+            update = save_col.form_submit_button("💾 Update / แก้ไข", width="stretch")
+            delete = delete_col.form_submit_button("🗑️ Delete / ลบ", width="stretch", type="secondary")
         try:
             if update:
                 db.save_employee(edit_code, edit_name, edit_salary, selected["id"])
@@ -253,7 +255,7 @@ def layout_attendance() -> None:
     p2.metric("Regular Pay", money(preview["regular_pay"]))
     p3.metric("OT Pay", money(preview["overtime_pay"]))
     p4.metric("Total", money(preview["total_pay"]))
-    if st.button("💾 Save attendance & calculate OT / บันทึกและคำนวณ OT", use_container_width=True, type="primary"):
+    if st.button("💾 Save attendance & calculate OT / บันทึกและคำนวณ OT", width="stretch", type="primary"):
         try:
             db.save_attendance(employee["id"], work_date, working_hours, day_type, notes)
             set_notice("Attendance and overtime calculation saved.")
@@ -271,7 +273,7 @@ def layout_attendance() -> None:
             frame = frame[(frame["work_date"] >= period_start) & (frame["work_date"] <= period_end)]
             st.caption(f"รอบเงินเดือน {chosen_month}: {period_start} ถึง {period_end}")
         shown = frame[["id", "work_date", "employee_code", "employee_name", "day_type", "working_hours", "hourly_rate", "regular_hours", "overtime_hours", "regular_pay", "overtime_pay", "total_pay", "notes"]]
-        st.dataframe(shown, use_container_width=True, hide_index=True, column_config={
+        st.dataframe(shown, width="stretch", hide_index=True, column_config={
             "regular_pay": st.column_config.NumberColumn("Regular Pay", format="฿%.2f"),
             "overtime_pay": st.column_config.NumberColumn("OT Pay", format="฿%.2f"),
             "total_pay": st.column_config.NumberColumn("Total Pay", format="฿%.2f"),
@@ -317,7 +319,7 @@ def layout_payroll(selected_month: str) -> None:
     with left:
         st.write(f"**Payroll month:** {selected_month}")
         st.write(f"**Attendance records:** {len(rows)}")
-        if st.button("🔄 Generate / refresh payroll", type="primary", use_container_width=True):
+        if st.button("🔄 Generate / refresh payroll", type="primary", width="stretch"):
             count = db.generate_monthly_payroll(selected_month)
             set_notice(f"Payroll generated for {count} employee(s).")
             st.rerun()
@@ -333,7 +335,7 @@ def layout_payroll(selected_month: str) -> None:
         return
     frame = pd.DataFrame(summary)
     st.subheader("Payroll summary / สรุปเงินเดือน")
-    st.dataframe(frame[["employee_code", "employee_name", "monthly_salary", "attendance_days", "regular_hours", "overtime_hours", "regular_pay", "overtime_pay", "total_pay", "other_income", "deductions", "net_pay", "generated_at"]], use_container_width=True, hide_index=True, column_config={
+    st.dataframe(frame[["employee_code", "employee_name", "monthly_salary", "attendance_days", "regular_hours", "overtime_hours", "regular_pay", "overtime_pay", "total_pay", "other_income", "deductions", "net_pay", "generated_at"]], width="stretch", hide_index=True, column_config={
         "monthly_salary": st.column_config.NumberColumn("Monthly Salary", format="฿%.2f"),
         "regular_pay": st.column_config.NumberColumn("Regular Pay", format="฿%.2f"),
         "overtime_pay": st.column_config.NumberColumn("OT Pay", format="฿%.2f"),
@@ -374,46 +376,6 @@ def layout_tax(selected_month: str) -> None:
     st.info(f"Effective tax rate: {result['effective_rate']:.2f}% | หักค่าใช้จ่ายเหมาจ่าย 50% สูงสุด 100,000 บาท")
 
 
-def layout_calendar() -> None:
-    st.title("🎨 " + tr("Calendar"))
-    st.caption("Saturday and Sunday default to Weekly Holiday (orange). Calendar entries override that rule. The supplied 2026 calendar has been preloaded.")
-    legend = "  ".join(f"<span class='legend-pill' style='background:{meta['color']}; color:{meta['text']}'>{kind}: {meta['label']}</span>" for kind, meta in DAY_META.items())
-    st.markdown(legend, unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-    selected_year = col1.number_input("Year / ปี", min_value=2020, max_value=2100, value=2026, step=1)
-    selected_month = col2.selectbox("Month / เดือน", list(range(1, 13)), format_func=lambda m: date(2026, m, 1).strftime("%B"))
-    overrides = {row["work_date"]: row for row in db.get_calendar_dates(int(selected_year), int(selected_month))}
-    cells = []
-    for day in db.month_days(int(selected_year), int(selected_month)):
-        row = overrides.get(day.isoformat())
-        kind = row["day_type"] if row else db.day_type_for(day)
-        description = row["description"] if row else ("Weekly Holiday" if day.weekday() >= 5 else "Working Day")
-        meta = DAY_META[kind]
-        cells.append(f"<div class='calendar-cell' style='background:{meta['color']};color:{meta['text']}'><b>{day.day}</b><small>{description or meta['label']}</small></div>")
-    st.markdown("<div class='calendar-grid'>" + "".join(cells) + "</div>", unsafe_allow_html=True)
-    st.divider()
-    st.subheader("Set a calendar date / กำหนดประเภทวัน")
-    with st.form("calendar_form", clear_on_submit=True):
-        c1, c2, c3 = st.columns(3)
-        selected_date = c1.date_input("Date / วันที่", value=date(int(selected_year), int(selected_month), 1))
-        kind = c2.selectbox(tr("Day Type"), list(DAY_META), format_func=lambda d: DAY_META[d]["label"])
-        description = c3.text_input("Description / รายละเอียด")
-        saved = st.form_submit_button("💾 Save calendar date / บันทึก")
-    if saved:
-        db.save_calendar_date(selected_date, kind, description)
-        set_notice("Calendar date saved. Future attendance selections will use this day type.")
-        st.rerun()
-    dates = db.get_calendar_dates(int(selected_year), int(selected_month))
-    if dates:
-        override_frame = pd.DataFrame(dates)
-        st.dataframe(override_frame[["work_date", "day_type", "description"]], use_container_width=True, hide_index=True)
-        remove_date = st.selectbox("Remove override / ลบการกำหนด", [row["work_date"] for row in dates])
-        if st.button("Remove selected override / ลบรายการที่เลือก", type="secondary"):
-            db.delete_calendar_date(remove_date)
-            set_notice("Calendar override removed. Weekend dates return to orange; weekdays return to white.")
-            st.rerun()
-
-
 def layout_reports(selected_month: str) -> None:
     st.title("📤 " + tr("Reports"))
     st.caption("Generate the monthly payroll first, then download an Excel workbook or PDF summary.")
@@ -424,10 +386,10 @@ def layout_reports(selected_month: str) -> None:
         return
     excel = make_excel(selected_month, attendance, summary)
     left, right = st.columns(2)
-    left.download_button("⬇️ Export Excel / ส่งออก Excel", data=excel, file_name=f"calculate_ot_{selected_month}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+    left.download_button("⬇️ Export Excel / ส่งออก Excel", data=excel, file_name=f"calculate_ot_{selected_month}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width="stretch")
     try:
         pdf = make_pdf(selected_month, summary)
-        right.download_button("⬇️ Export PDF / ส่งออก PDF", data=pdf, file_name=f"calculate_ot_{selected_month}.pdf", mime="application/pdf", use_container_width=True)
+        right.download_button("⬇️ Export PDF / ส่งออก PDF", data=pdf, file_name=f"calculate_ot_{selected_month}.pdf", mime="application/pdf", width="stretch")
     except Exception as exc:
         right.error(f"PDF export unavailable: {exc}")
 
@@ -436,34 +398,23 @@ def main() -> None:
     db.init_db()
     if "language" not in st.session_state:
         st.session_state.language = "ไทย"
-    st.markdown("""
-    <style>
-    .stApp { background: linear-gradient(135deg,#fff7fb 0%,#fff 55%,#fff0f6 100%); color: #4a2538; }
-    [data-testid='stSidebar'] { background: linear-gradient(180deg,#d9487d 0%,#9f315d 100%); }
-      [data-testid='stSidebar'] * { color: #f8fafc; }
-      .brand { font-size: 1.55rem; font-weight: 750; margin-bottom: .2rem; }
-      .brand-sub { opacity: .82; font-size: .87rem; margin-bottom: 1.4rem; }
-    [data-testid='stMetric'] { background: rgba(255,255,255,.88); border: 1px solid #f2bfd2; padding: 14px; border-radius: 12px; box-shadow: 0 3px 10px rgba(159,49,93,.08); }
-      .legend-pill { padding: 5px 10px; margin: 0 4px 8px 0; display:inline-block; border-radius: 999px; font-size:.75rem; font-weight:600; border:1px solid rgba(15,23,42,.12); }
-      .calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(58px,1fr)); gap:7px; margin-top:14px; }
-      .calendar-cell { min-height:70px; border-radius:10px; padding:8px; box-shadow: inset 0 0 0 1px rgba(15,23,42,.12); }
-      .calendar-cell small { display:block; font-size:.68rem; opacity:.86; margin-top:5px; line-height:1.08; }
-    [data-testid='stDataFrame'] { max-width: 100%; overflow-x: auto; }
-    @media (max-width: 700px) { .calendar-grid { grid-template-columns:repeat(4,1fr); } .calendar-cell { min-height:60px; } h1 { font-size: 1.7rem; } [data-testid='stMetric'] { padding: 10px; } }
-    </style>
-    """, unsafe_allow_html=True)
     with st.sidebar:
-        st.markdown("<div class='brand'>⏱️ Calculate OT</div><div class='brand-sub'>Payroll & overtime management</div>", unsafe_allow_html=True)
+        st.title(":material/favorite: Calculate OT")
+        st.caption("เงินเดือนและ OT คิดให้ง่ายขึ้น")
         st.session_state.language = st.selectbox("Language / ภาษา", ["ไทย", "English"], index=["ไทย", "English"].index(st.session_state.language))
-        page = st.radio("Navigation", ["Dashboard", "Employees", "Attendance", "Payroll", "Tax Calculator", "Calendar", "Reports"], format_func=tr)
-        months = db.available_months()
+        pages = ["Quick calculator", "Calendar", "Dashboard", "Employees", "Attendance", "Payroll", "Tax Calculator", "Reports"]
+        navigation_labels = {name: tr(name) for name in pages}
+        page = st.radio("เมนู", pages, format_func=navigation_labels.get, key="navigation")
         default_month = date.today().strftime("%Y-%m")
-        selected_month = st.selectbox("Payroll month / เดือนเงินเดือน", months if months else [default_month])
+        months = sorted(set(db.available_months() + [f"2026-{month:02d}" for month in range(1, 13)] + [default_month]), reverse=True)
+        selected_month = st.selectbox("รอบเงินเดือน", months, index=months.index(default_month), key="payroll_month")
         st.divider()
-        st.caption("Hourly rate = Monthly salary ÷ 30 ÷ 8")
-        st.caption("Blue: all hours ×3 · Orange/Green: >8 hours ×3 · White: >8 hours ×1.5")
+        st.caption(":material/event: รอบวันที่ 16 เดือนก่อน ถึงวันที่ 15 ของเดือนที่เลือก")
+        st.caption(":material/description: อ้างอิงปฏิทินบริษัท 2026")
     show_notice()
-    if page == "Dashboard":
+    if page == "Quick calculator":
+        layout_quick_calculator(selected_month)
+    elif page == "Dashboard":
         layout_dashboard(selected_month)
     elif page == "Employees":
         layout_employees()
