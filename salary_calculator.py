@@ -57,6 +57,23 @@ def _items(values: Mapping[str, float] | None, label: str) -> dict[str, float]:
     return result
 
 
+def _rate_hours(values: Mapping[Any, float], label: str, max_hours: float = 24) -> dict[float, float]:
+    if not isinstance(values, Mapping):
+        raise ValueError(f"{label} must contain named hours.")
+    result: dict[float, float] = {}
+    for rate, hours in values.items():
+        try:
+            multiplier = float(rate)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"{label} contains an invalid rate.") from exc
+        if multiplier not in (1.0, 1.5, 2.0, 3.0):
+            raise ValueError(f"{label} contains an unsupported rate.")
+        result[multiplier] = _number(hours, f"{label}: {multiplier:g}")
+    if sum(result.values()) > max_hours:
+        raise ValueError(f"{label} must total no more than {max_hours:g} hours.")
+    return result
+
+
 def _work_date(value: Any) -> str:
     if isinstance(value, datetime):
         return value.date().isoformat()
@@ -73,6 +90,7 @@ def calculate_monthly_salary(
     incomes: Mapping[str, float] | None = None,
     deductions: Mapping[str, float] | None = None,
     work_entries: Sequence[Mapping[str, Any]] | None = None,
+    rate_hours: Mapping[Any, float] | None = None,
 ) -> dict[str, Any]:
     """Return a monthly salary estimate and its itemized breakdown.
 
@@ -117,7 +135,26 @@ def calculate_monthly_salary(
         day_type = record.get("day_type")
         if day_type not in db.DAY_TYPES:
             raise ValueError("Invalid day type.")
-        pay = db.calculate_pay(salary, hours, day_type)
+        custom_rate_hours = record.get("rate_hours")
+        if custom_rate_hours is None:
+            pay = db.calculate_pay(salary, hours, day_type)
+        else:
+            entry_rate_hours = _rate_hours(custom_rate_hours, "Rate hours")
+            hourly_rate = salary / 30 / 8
+            custom_total = _money(sum(
+                custom_hours * hourly_rate * multiplier
+                for multiplier, custom_hours in entry_rate_hours.items()
+            ))
+            pay = {
+                "hourly_rate": round(hourly_rate, 2),
+                "regular_hours": 0.0,
+                "overtime_hours": sum(entry_rate_hours.values()),
+                "regular_multiplier": 0.0,
+                "overtime_multiplier": 0.0,
+                "regular_pay": 0.0,
+                "overtime_pay": custom_total,
+                "total_pay": custom_total,
+            }
         if not all(math.isfinite(value) for value in pay.values()):
             raise ValueError("The calculated amount is too large.")
         additional_pay = pay["overtime_pay"] if day_type == "WHITE" else pay["total_pay"]
@@ -131,12 +168,19 @@ def calculate_monthly_salary(
             **pay,
             "additional_work_pay": additional_pay,
             "holiday_pay": holiday_pay,
+            "rate_hours": entry_rate_hours if custom_rate_hours is not None else None,
         })
 
+    overall_rate_hours = _rate_hours(rate_hours, "Rate hours", max_hours=200) if rate_hours is not None else {}
+    hourly_rate = salary / 30 / 8
+    overall_rate_pay = _money(sum(
+        hours * hourly_rate * multiplier
+        for multiplier, hours in overall_rate_hours.items()
+    ))
     total_income = _sum_money(list(income_items.values()))
     total_deductions = _sum_money(list(deduction_items.values()))
-    additional_work_pay = _sum_money([entry["additional_work_pay"] for entry in entries])
-    overtime_pay = _sum_money([entry["overtime_pay"] for entry in entries])
+    additional_work_pay = _sum_money([entry["additional_work_pay"] for entry in entries] + [overall_rate_pay])
+    overtime_pay = _sum_money([entry["overtime_pay"] for entry in entries] + [overall_rate_pay])
     holiday_pay = _sum_money([entry["holiday_pay"] for entry in entries])
     gross_pay = _sum_money([salary, total_income, additional_work_pay])
     return {
@@ -151,5 +195,6 @@ def calculate_monthly_salary(
         "gross_pay": gross_pay,
         "net_pay": _sum_money([gross_pay, -total_deductions]),
         "hourly_rate": db.calculate_pay(salary, 0, "WHITE")["hourly_rate"],
+        "rate_hours": overall_rate_hours,
         "entries": entries,
     }

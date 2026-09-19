@@ -67,6 +67,31 @@ class MonthlySalaryTests(unittest.TestCase):
         self.assertEqual(result["net_pay"], 34_875)
         self.assertEqual(result["entries"][-1]["additional_work_pay"], 0)
 
+    def test_custom_overtime_rates_are_aggregated_per_day(self):
+        result = calculate_monthly_salary(30_000, work_entries=[{
+            "work_date": "2026-01-05",
+            "working_hours": 4,
+            "day_type": "WHITE",
+            "rate_hours": {1: 1, 1.5: 2, 2: 0.5, 3: 0.5},
+        }])
+        self.assertEqual(result["additional_work_pay"], 812.50)
+        self.assertEqual(result["entries"][0]["rate_hours"][1.5], 2)
+
+    def test_custom_overtime_rates_cannot_exceed_24_hours(self):
+        with self.assertRaisesRegex(ValueError, "no more than 24 hours"):
+            calculate_monthly_salary(30_000, work_entries=[{
+                "work_date": "2026-01-05",
+                "working_hours": 24,
+                "day_type": "WHITE",
+                "rate_hours": {1: 24, 1.5: 1},
+            }])
+
+    def test_monthly_overtime_rates_allow_up_to_200_hours(self):
+        result = calculate_monthly_salary(30_000, rate_hours={1.5: 200})
+        self.assertEqual(result["rate_hours"], {1.5: 200})
+        with self.assertRaisesRegex(ValueError, "no more than 200 hours"):
+            calculate_monthly_salary(30_000, rate_hours={1.5: 200, 1: 0.5})
+
     def test_decimal_items_round_consistently_to_cents(self):
         result = calculate_monthly_salary(1_000.005, {"A": 0.105, "B": 0.105}, {"C": 0.105})
         self.assertEqual(result["salary"], 1_000.01)

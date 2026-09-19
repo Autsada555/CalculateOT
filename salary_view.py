@@ -58,10 +58,17 @@ def summary_csv(month: str, result: dict) -> bytes:
         writer.writerow([name, -value])
     writer.writerow(["ยอดรับสุทธิ", result["net_pay"]])
     writer.writerow([])
-    writer.writerow(["วันที่", "ประเภทวัน", "ชั่วโมงทำงานรวม", "ค่าทำงานเพิ่ม (บาท)"])
+    writer.writerow(["ชั่วโมง OT รวมตามอัตรา", "ชั่วโมง"])
+    for multiplier in (1.0, 1.5, 2.0, 3.0):
+        writer.writerow([f"ชั่วโมง ×{multiplier:g}", result["rate_hours"].get(multiplier, 0)])
+    writer.writerow([])
+    writer.writerow(["วันที่", "ประเภทวัน", "ชั่วโมงรวม", "ชั่วโมง ×1", "ชั่วโมง ×1.5",
+                     "ชั่วโมง ×2", "ชั่วโมง ×3", "ค่าทำงานเพิ่ม (บาท)"])
     for entry in result["entries"]:
-        writer.writerow([entry["work_date"], DAY_LABELS[entry["day_type"]],
-                         entry["working_hours"], entry["additional_work_pay"]])
+        rates = entry.get("rate_hours") or {}
+        writer.writerow([entry["work_date"], DAY_LABELS[entry["day_type"]], entry["working_hours"],
+                         rates.get(1.0, ""), rates.get(1.5, ""), rates.get(2.0, ""),
+                         rates.get(3.0, ""), entry["additional_work_pay"]])
     writer.writerow([])
     writer.writerow(["ฐาน OT", "เงินเดือน / 30 / 8; เงินเพิ่มไม่รวมฐาน OT"])
     writer.writerow(["หมายเหตุ", "คำนวณตามนโยบายเดิมของระบบ; รายการหักเป็นยอดที่ผู้ใช้กรอก"])
@@ -107,41 +114,34 @@ def layout_quick_calculator(selected_month: str) -> None:
 
         with st.container(border=True):
             st.subheader("3. OT และทำงานวันหยุด", anchor=False)
-            st.caption("เลือกเฉพาะวันที่ทำงานเพิ่ม ประเภทวันจะอ้างอิงจากปฏิทินให้อัตโนมัติ")
+            st.caption("กรอกชั่วโมง OT รวมของเดือนนี้ครั้งเดียว แล้วเลือกวันที่ไว้เป็นข้อมูลอ้างอิงได้ตามต้องการ")
+            rate_hours = {}
+            rate_columns = st.columns(4)
+            for column, multiplier in zip(rate_columns, (1, 1.5, 2, 3)):
+                with column:
+                    rate_hours[float(multiplier)] = st.number_input(
+                        f"ชั่วโมง ×{multiplier:g}", min_value=0.0, max_value=200.0,
+                        value=0.0, step=0.5,
+                        key=f"{prefix}_rate_{multiplier:g}_hours", persist_state="session",
+                    )
             dates = period_dates(selected_month)
             metadata = {day: db.get_calendar_day(day) for day in dates}
             chosen = st.multiselect(
-                "วันที่ทำ OT / ทำงานวันหยุด", dates,
+                "วันที่ทำ OT / ทำงานวันหยุด (ไม่บังคับ)", dates,
                 format_func=lambda d: f"{thai_date(d)} · {DAY_LABELS[metadata[d]['day_type']]}",
-                placeholder="เลือกวันที่ทำงานเพิ่มได้หลายวัน", key=f"{prefix}_dates",
+                placeholder="เลือกวันที่ไว้ดูประกอบได้หลายวัน", key=f"{prefix}_dates",
                 persist_state="session",
             )
             entries = []
-            for day in sorted(chosen):
-                info = metadata[day]
-                kind = info["day_type"]
-                with st.container(border=True):
-                    st.write(f"**{thai_date(day)}** :{DAY_BADGES[kind]}-badge[{DAY_LABELS[kind]}]")
-                    st.caption(info["description"])
-                    ordinary = kind == "WHITE"
-                    hours = st.number_input(
-                        "ชั่วโมง OT หลังงานปกติ 8 ชม." if ordinary else "ชั่วโมงทำงานทั้งหมดในวันหยุด",
-                        min_value=0.0, max_value=16.0 if ordinary else 24.0, value=0.0, step=0.5,
-                        key=f"{prefix}_{day.isoformat()}_{kind}_hours", persist_state="session",
-                    )
-                    working_hours = hours + 8 if ordinary else hours
-                    preview = db.calculate_pay(salary, working_hours, kind)
-                    added = preview["overtime_pay"] if ordinary else preview["total_pay"]
-                    st.caption(f"เพิ่มจากวันนี้ {money(added)} · " +
-                               ("OT ×1.5" if ordinary else "ทุกชั่วโมง ×3" if kind == "BLUE" else "8 ชม.แรก ×1 · หลัง 8 ชม. ×3"))
-                    entries.append({"work_date": day, "day_type": kind, "working_hours": working_hours})
-            if not chosen:
-                st.caption("ยังไม่มี OT · คำนวณเงินเดือนและเงินเพิ่มได้ตามปกติ")
+            if chosen:
+                st.caption("เลือกไว้เพื่ออ้างอิงเท่านั้น ชั่วโมงที่กรอกด้านบนจะไม่ถูกคูณตามจำนวนวันที่เลือก")
+            else:
+                st.caption("ยังไม่ได้เลือกวันที่ · ชั่วโมง OT ด้านบนยังคำนวณรวมได้ตามปกติ")
             if any(day.year != 2026 for day in chosen):
                 st.warning("บางวันที่เลือกอยู่นอกปฏิทินอ้างอิงปี 2026 ระบบใช้วันจันทร์–ศุกร์เป็นวันทำงาน และเสาร์–อาทิตย์เป็นวันหยุด เว้นแต่กำหนดเองในหน้าปฏิทิน")
 
     try:
-        result = calculate_monthly_salary(salary, incomes, deductions, entries)
+        result = calculate_monthly_salary(salary, incomes, deductions, entries, rate_hours)
     except ValueError as exc:
         with results:
             st.error(f"กรุณาตรวจข้อมูลที่กรอก: {exc}")

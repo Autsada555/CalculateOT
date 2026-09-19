@@ -39,12 +39,12 @@ class SalaryAppTests(unittest.TestCase):
     def test_ot_dates_use_calendar_and_do_not_double_count_salary(self):
         self.app.number_input(key="quick_2026-09_salary").set_value(30000).run()
         self.app.multiselect(key="quick_2026-09_dates").set_value([date(2026, 9, 7), date(2026, 9, 6)]).run()
-        self.app.number_input(key="quick_2026-09_2026-09-07_WHITE_hours").set_value(2).run()
-        self.app.number_input(key="quick_2026-09_2026-09-06_ORANGE_hours").set_value(8).run()
+        self.app.number_input(key="quick_2026-09_rate_1.5_hours").set_value(2).run()
+        self.app.number_input(key="quick_2026-09_rate_1_hours").set_value(8).run()
         self.assert_clean()
         self.assertEqual(self.app.metric[0].value, "฿31,375.00")
         self.app.multiselect(key="quick_2026-09_dates").set_value([]).run()
-        self.assertEqual(self.app.metric[0].value, "฿30,000.00")
+        self.assertEqual(self.app.metric[0].value, "฿31,375.00")
 
     def test_draft_survives_calendar_navigation_and_month_switch(self):
         self.app.number_input(key="quick_2026-09_salary").set_value(31000).run()
